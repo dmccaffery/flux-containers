@@ -1,0 +1,41 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+apiVersion: flux-containers/v1alpha1
+name: kyverno
+chart:
+  repo: oci://ghcr.io/kyverno/charts
+  name: kyverno
+  version: "3.8.2"
+  versionConstraint: ">=3.8.0 <4.0.0"
+  verifyUpstream:
+    provider: cosign-keyless
+    certificateIdentityRegexp: "^https://github.com/kyverno/kyverno/"
+    certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+    # kyverno publishes signatures to a dedicated repository, not next to the artifact.
+    signatureRepository: ghcr.io/kyverno/signatures
+discovery:
+  namespace: kyverno
+  valuesFiles: [values/discovery.yaml]
+  kubeVersion: "1.34.0"
+images:
+  extra: []
+  exclude:
+    # helm test hook pod on a mutable `latest` tag; tests never run under flux.
+    - pattern: "ghcr.io/kyverno/readiness-checker:*"
+  verifyUpstream:
+    # kyverno 1.18+ references its images via the reg.kyverno.io vanity registry.
+    - match: "reg.kyverno.io/kyverno/*"
+      provider: cosign-keyless
+      certificateIdentityRegexp: "^https://github.com/kyverno/kyverno/"
+      certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+      signatureRepository: ghcr.io/kyverno/signatures
+    - match: "ghcr.io/kyverno/*"
+      provider: cosign-keyless
+      certificateIdentityRegexp: "^https://github.com/kyverno/kyverno/"
+      certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+      signatureRepository: ghcr.io/kyverno/signatures
+scan:
+  failOn: [CRITICAL, HIGH]
+  ignoreUnfixed: true
+publish:
+  chartRepo: charts/kyverno

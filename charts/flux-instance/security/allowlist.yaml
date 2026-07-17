@@ -1,0 +1,23 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Accepted findings for the flux v2.9.2 distribution controller images (the
+# distribution embedded in flux-operator 0.55.0 — the newest available; no
+# rebuilt images exist with the fixed modules). Re-review on the next
+# flux-operator/flux-instance release.
+vulnerabilities:
+  # github.com/sigstore/fulcio: fixed in 1.8.6, source-controller ships 1.8.5.
+  - id: GHSA-f5mr-q85p-6hh6
+    statement: Fixed in github.com/sigstore/fulcio 1.8.6; no flux distribution ships it (v2.9.2 is latest). Re-review on next upstream release.
+    expired_at: "2026-10-01"
+  # Go stdlib: fixed in go1.26.5, the v2.9.2 controllers are built with go1.26.4.
+  - id: GO-2026-4970
+    statement: Fixed in Go 1.26.5; no flux distribution is built with a patched Go (v2.9.2 is latest). Re-review on next upstream release.
+    expired_at: "2026-10-01"
+  # libcurl (alpine base): fixed in 8.20.0-r0, the v2.9.2 images ship 8.19.0-r0.
+  - id: CVE-2026-5773
+    statement: &libcurl Fixed in alpine libcurl 8.20.0-r0; no flux distribution image ships it (v2.9.2 is latest). Re-review on next upstream release.
+    expired_at: "2026-10-01"
+  - id: CVE-2026-6276
+    statement: *libcurl
+    expired_at: "2026-10-01"

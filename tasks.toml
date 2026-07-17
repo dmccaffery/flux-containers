@@ -1,0 +1,134 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+#
+# The pipeline surface. Most tasks operate on a single chart selected by the
+# CHART environment variable (`make vendor CHART=flux-operator` — the Makefile
+# exports CHART into the task env). Scripts follow the stdout-for-data,
+# stderr-for-logging convention. Aggregates are sequential composites — the
+# steps are a hard dependency chain, and mutating passes must not race.
+
+[lint]
+description = "chart manifests, CVE allowlists, prose, scripts, workflows"
+run = [
+  { task = "license-check" },
+  { task = "lint-shell" },
+  { task = "lint-prose" },
+  { task = "actionlint" },
+  "scripts/lint-manifests.sh",
+]
+
+# Prose + license headers only: vendored charts, rendered output and image
+# locks must stay byte-identical to what the pipeline generates (see
+# .prettierignore / .licenseignore), so nothing here ever rewrites YAML facts.
+[fmt]
+description = "format prose + inject license headers"
+run = [{ task = "fmt-prose" }, { task = "license" }]
+
+[vendor]
+description = "vendor the pinned upstream chart (CHART=<name>)"
+run = 'scripts/vendor-chart.sh "${CHART:?usage: make vendor CHART=<name>}"'
+
+[render]
+description = "render the vendored chart with discovery values (CHART=<name>)"
+run = 'scripts/render-chart.sh "${CHART:?usage: make render CHART=<name>}"'
+
+[discover]
+description = "discover referenced images and write the lock (CHART=<name>)"
+run = 'scripts/extract-images.sh "${CHART:?usage: make discover CHART=<name>}"'
+
+[verify]
+description = "verify upstream provenance of chart and images (CHART=<name>)"
+run = 'scripts/verify-upstream.sh "${CHART:?usage: make verify CHART=<name>}"'
+
+[scan]
+description = "scan locked images and chart configuration (CHART=<name>)"
+run = 'scripts/scan.sh "${CHART:?usage: make scan CHART=<name>}"'
+
+[check-updates]
+description = "print the newest upstream version satisfying the constraint (CHART=<name>)"
+run = 'scripts/check-updates.sh "${CHART:?usage: make check-updates CHART=<name>}"'
+
+[publish]
+description = "publish mirrored images and the chart (CHART=<name>)"
+run = [
+  'scripts/publish-images.sh "${CHART:?usage: make publish CHART=<name>}"',
+  'scripts/publish-chart.sh "$CHART"',
+]
+
+# Regenerate all derived state for a chart (what the update PR job runs after a bump).
+[refresh]
+description = "vendor + render + discover (CHART=<name>)"
+run = [{ task = "vendor" }, { task = "render" }, { task = "discover" }]
+
+# Full local pipeline for one chart (everything pr-validate runs, minus publish).
+[validate]
+description = "full local pipeline for one chart (CHART=<name>)"
+run = [{ task = "refresh" }, { task = "verify" }, { task = "scan" }]
+
+# Bump one chart to the newest upstream version satisfying its constraint, then
+# regenerate all derived state. No-op when the pin is already current.
+[update]
+description = "bump one chart to the newest upstream version (CHART=<name>)"
+run = """
+set -eu
+: "${CHART:?usage: make update CHART=<name>}"
+new="$(scripts/check-updates.sh "$CHART")"
+[ -n "$new" ] || exit 0
+NEW="$new" yq -i '.chart.version = env(NEW)' "charts/$CHART/manifest.yaml"
+mise run refresh
+"""
+
+# The *-all loops attempt every chart even when one fails and summarize at the end.
+[update-all]
+description = "update every chart to its latest available version"
+run = """
+set -eu
+failed=""
+for dir in charts/*/; do
+  chart="$(basename "$dir")"
+  echo "==> $chart"
+  CHART="$chart" mise run update || failed="$failed $chart"
+done
+echo "==> summary"
+for dir in charts/*/; do
+  chart="$(basename "$dir")"
+  case " $failed " in
+    *" $chart "*) echo "  FAIL  $chart" ;;
+    *) echo "  ok    $chart" ;;
+  esac
+done
+[ -z "$failed" ]
+"""
+
+[validate-charts]
+hide = true
+run = """
+set -eu
+failed=""
+for dir in charts/*/; do
+  chart="$(basename "$dir")"
+  echo "==> $chart"
+  CHART="$chart" mise run validate || failed="$failed $chart"
+done
+echo "==> summary"
+for dir in charts/*/; do
+  chart="$(basename "$dir")"
+  case " $failed " in
+    *" $chart "*) echo "  FAIL  $chart" ;;
+    *) echo "  ok    $chart" ;;
+  esac
+done
+[ -z "$failed" ]
+"""
+
+[validate-all]
+description = "full pipeline for every chart plus the repo-wide lint gates"
+run = [{ task = "lint" }, { task = "validate-charts" }]
+
+[ci]
+description = "what the reusable CI workflow runs (the deep per-chart pipeline lives in pr-validate)"
+run = [{ task = "lint" }]
+
+[pr]
+description = "full pipeline + lint gates — run before opening a pull request"
+run = [{ task = "fmt" }, { task = "validate-all" }, { task = "commit" }]

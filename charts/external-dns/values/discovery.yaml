@@ -1,0 +1,6 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+#
+# Discovery-only values: the google provider configuration the runtime uses
+# (flux-manifests) changes no images, so nothing to enable here.
+{}

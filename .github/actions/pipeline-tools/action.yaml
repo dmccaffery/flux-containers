@@ -1,0 +1,36 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+name: pipeline-tools
+description: Install the pinned chart pipeline toolchain via mise (helm, crane, cosign, grype, kubescape, yq, shellcheck, prettier, markdownlint-cli2)
+
+# Tool versions come from two places: the shared toolchain submodule at .mise/
+# (config.toml + mise.lock — helm, grype, kubescape, shellcheck, prose tools)
+# and the root mise.toml (+ mise.lock) for the pipeline-only additions (crane,
+# cosign, yq). mise verifies every download against the lockfiles (plus
+# cosign/SLSA/GitHub attestations where the publisher provides them), so no
+# system Go or Node is needed anywhere. Callers must check out with
+# `submodules: true` so .mise/ exists. mise-action caches the tool store keyed
+# on the pins and puts mise shims on PATH, so both `make <target>`
+# (→ `mise run`) and direct `scripts/<step>.sh` invocations get the pinned
+# tools.
+runs:
+  using: composite
+  steps:
+    - name: Set up mise
+      uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      with:
+        version: 2026.7.3
+        # sha256 of mise-v2026.7.3-linux-x64.tar.gz, from the release's SHASUMS256.txt
+        sha256: 4cd83913f590ae3c7e06b1f49dc19ad521c284b6d82652782e1444b63f260c25
+        install: false # trust explicitly first; the step below does the install
+
+    - name: install pinned tools
+      shell: bash
+      env:
+        # mise resolves aqua-backend releases via the GitHub API; unauthenticated
+        # calls rate-limit on shared runners
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        mise trust --quiet mise.toml
+        mise trust --quiet .mise/config.toml
+        mise install

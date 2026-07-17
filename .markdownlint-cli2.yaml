@@ -1,0 +1,34 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Repo-local copy of the toolchain house default (.mise/.markdownlint-cli2.yaml)
+# with one delta: vendored upstream chart trees ship their own READMEs, which
+# are not house prose.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/refs/heads/main/schema/markdownlint-cli2-config-schema.json
+config:
+  default: true
+  # keep prose readable in terminals and diffs; tables are exempt.
+  line-length:
+    line_length: 120
+    tables: false
+  no-duplicate-heading:
+    siblings_only: true
+  code-block-style:
+    style: fenced
+
+globs:
+  - "**/*.md"
+
+ignores:
+  # node cruft
+  - "node_modules/**"
+  # the toolchain library submodule (its prose is linted in its own repo)
+  - ".mise/**"
+  # uv-managed virtualenvs (site-packages ship their own markdown)
+  - ".venv/**"
+  # agent cruft
+  - ".claude/**"
+  # machine-written by release-please, not house prose
+  - "CHANGELOG.md"
+  # vendored upstream charts (their prose is upstream's business)
+  - "charts/**/vendor/**"

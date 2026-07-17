@@ -1,0 +1,15 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+#
+# Discovery-only values: enable anything whose images must be mirrored, even
+# when a given cluster's runtime values (in flux-manifests) leave it off.
+# Runtime values do NOT live here.
+#
+# The webhooksCleanup and policyReportsCleanup hooks default to third-party
+# kubectl/CLI images; runtime values disable them (flux-manifests), so they
+# are disabled for discovery too — nothing outside kyverno's own registries
+# may reach the mirror for this chart.
+webhooksCleanup:
+  enabled: false
+policyReportsCleanup:
+  enabled: false

@@ -1,0 +1,67 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Weekly rescan of every chart's published image set with a fresh grype DB —
+# the feedback loop for CVEs published after merge. Never blocks anything:
+# findings land as security-labelled issues, fixed by bumping the chart (new
+# upstream images) or allowlisting with a statement and expiry. The final step
+# re-lints so allowlist entries nearing expiry surface here too.
+name: rescan
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  rescan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: true
+
+      - name: install tools
+        uses: ./.github/actions/pipeline-tools
+
+      - name: rescan all published image sets with a fresh DB
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          failed=""
+          for dir in charts/*/; do
+            chart="$(basename "$dir")"
+            echo "::group::$chart"
+            if ! scripts/scan.sh "$chart" 2>&1 | tee "/tmp/rescan-$chart.log"; then
+              failed="$failed $chart"
+            fi
+            echo "::endgroup::"
+          done
+          echo "failed=${failed# }" >> "$GITHUB_OUTPUT"
+
+      - name: open or update issues for new findings
+        if: steps.scan.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # shellcheck disable=SC2016 # the backticked markdown in the printf format is literal
+          for chart in ${{ steps.scan.outputs.failed }}; do
+            title="rescan: blocking vulnerabilities in $chart"
+            body="$(printf 'Weekly rescan found blocking findings in already-published images.\n\n```\n%s\n```\n\nFix by bumping the chart (new upstream images) or allowlisting with a statement and expiry.\n' "$(tail -40 "/tmp/rescan-$chart.log")")"
+            existing="$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --title "$title" --body "$body" --label security
+            fi
+          done
+
+      - name: flag expiring allowlist entries
+        if: always()
+        run: scripts/lint-manifests.sh

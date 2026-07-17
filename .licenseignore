@@ -1,0 +1,3 @@
+charts/**/vendor/**
+charts/**/rendered/**
+charts/**/images.lock.yaml

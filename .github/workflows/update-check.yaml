@@ -1,0 +1,71 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Daily upstream version sweep: for each chart whose versionConstraint admits
+# a newer upstream release, bump the pin, regenerate all derived state and
+# open (or refresh) a feat(<chart>) PR. The PR's vendor/rendered diff is the
+# reviewable change; pr-validate posts provenance + scan results on it.
+name: update-check
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      chart:
+        description: Only check this chart
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: true
+
+      - name: install tools
+        uses: ./.github/actions/pipeline-tools
+
+      - name: open bump PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_CHART: ${{ inputs.chart }}
+        run: |
+          # shellcheck disable=SC2016 # the backticked markdown in the pr-body printf is literal
+          set -euo pipefail
+          git config user.name "chart-update-bot"
+          git config user.email "chart-update-bot@users.noreply.github.com"
+
+          charts="$INPUT_CHART"
+          [ -n "$charts" ] || charts="$(ls charts)"
+
+          for chart in $charts; do
+            current="$(yq '.chart.version' "charts/$chart/manifest.yaml")"
+            new="$(scripts/check-updates.sh "$chart" | tail -1)"
+            [ -n "$new" ] && [ "$new" != "$current" ] || continue
+
+            branch="update/$chart-$new"
+            if gh pr list --head "$branch" --state open --json number --jq length | grep -qv '^0$'; then
+              echo "PR for $branch already open; skipping"
+              continue
+            fi
+
+            git switch -C "$branch" origin/main
+            NEW="$new" yq -i '.chart.version = env(NEW)' "charts/$chart/manifest.yaml"
+            make refresh CHART="$chart"
+            git add "charts/$chart"
+            git commit -m "feat($chart): update chart to $new"
+            git push -f origin "$branch"
+
+            # shellcheck disable=SC2016 # the backticked markdown in the printf format is literal
+            gh pr create \
+              --head "$branch" \
+              --title "feat($chart): update chart to $new" \
+              --body "$(printf 'Automated chart bump: `%s` **%s → %s**.\n\nThe diff of `vendor/` and `rendered/` below is the reviewable change; `images.lock.yaml` carries the resolved image set. pr-validate posts provenance and scan results as a sticky comment.\n' "$chart" "$current" "$new")"
+            git switch main
+          done

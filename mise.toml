@@ -1,0 +1,24 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+#
+# flux-containers consumes the shared toolchain (bitwise-media-group/toolchain)
+# as the .mise/ submodule: pinned tools (helm, grype, kubescape, shellcheck,
+# prettier, markdownlint, addlicense, ...) and the universal tasks come from
+# there, and the Makefile is a thin forwarder (.mise/mise.mk). The pipeline
+# task surface lives in tasks.toml.
+
+[task_config]
+# markdown-lib archetype (prose fmt/lint + license + actionlint + shell lint)
+# plus the repo-local pipeline tasks; tasks.toml is included AFTER the
+# archetype so its same-named aggregates (fmt, lint, ci, pr) win.
+includes = [".mise/tasks/markdown-lib.toml", "tasks.toml"]
+
+[tools]
+# Pipeline tools the toolchain does not pin (candidates for upstreaming to
+# toolchain config.toml; locked in this repo's own mise.lock meanwhile —
+# never run a repo-wide `mise upgrade`, it would write into the submodule).
+# jq is deliberately unpinned: extract-images.sh uses it, and every GitHub
+# runner and dev machine ships one (same posture as the scripts' upstream).
+"aqua:google/go-containerregistry" = "0.21.7" # crane
+"aqua:sigstore/cosign" = "3.1.1"              # v3 semantics (--use-signing-config=false)
+"aqua:mikefarah/yq" = "4.53.3"

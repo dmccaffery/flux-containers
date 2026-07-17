@@ -1,0 +1,121 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# PR validation — the deep per-chart pipeline gate (the org reusable ci.yaml
+# runs only the cheap repo-wide lint): regenerate all derived state and demand
+# a byte-identical tree (proves the committed vendor/ matches a fresh upstream
+# pull, rendered/ regenerates identically and the image lock reflects the
+# reviewed chart), then verify upstream provenance and scan images + config,
+# and post the results as a sticky PR comment for reviewers.
+name: PR Validate
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "scripts/**"
+      - "config/**"
+      - "Makefile"
+      - "mise.toml"
+      - "mise.lock"
+      - "tasks.toml"
+      - ".mise"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: install tools
+        uses: ./.github/actions/pipeline-tools
+
+      - name: detect changed charts
+        id: charts
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed="$(git diff --name-only "origin/$BASE_REF"...HEAD -- charts/ | cut -d/ -f2 | sort -u | xargs)"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "changed charts: $changed"
+
+      - name: regenerate pipeline state (vendor integrity + lock freshness)
+        if: steps.charts.outputs.changed != ''
+        run: |
+          for chart in ${{ steps.charts.outputs.changed }}; do
+            make refresh CHART="$chart"
+          done
+          # A clean tree proves: committed vendor/ matches a fresh upstream pull, rendered/
+          # regenerates identically, and the image lock reflects the reviewed chart.
+          git diff --exit-code -- charts/ \
+            || { echo '::error::committed pipeline state does not regenerate cleanly'; exit 1; }
+
+      - name: verify upstream provenance
+        if: steps.charts.outputs.changed != ''
+        run: |
+          for chart in ${{ steps.charts.outputs.changed }}; do
+            scripts/verify-upstream.sh "$chart" 2>&1 | tee -a /tmp/verify.log
+          done
+
+      - name: scan images and chart config
+        if: steps.charts.outputs.changed != ''
+        run: |
+          for chart in ${{ steps.charts.outputs.changed }}; do
+            scripts/scan.sh "$chart" 2>&1 | tee -a /tmp/scan.log
+          done
+
+      - name: summarize for reviewers
+        if: always() && steps.charts.outputs.changed != ''
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          {
+            echo "## Chart pipeline validation"
+            echo
+            for chart in ${{ steps.charts.outputs.changed }}; do
+              echo "### \`$chart\`"
+              echo '```'
+              git diff --stat "origin/$BASE_REF"...HEAD -- "charts/$chart/vendor" "charts/$chart/rendered" | tail -3
+              echo '```'
+              echo "Images:"
+              echo '```yaml'
+              cat "charts/$chart/images.lock.yaml"
+              echo '```'
+            done
+            echo "### Provenance"
+            echo '```'
+            grep -E '^(>>|warning)' /tmp/verify.log 2>/dev/null || echo "(not reached)"
+            echo '```'
+          } > /tmp/summary.md
+          cat /tmp/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: sticky PR comment
+        if: always() && steps.charts.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Sticky behaviour without an external action: an invisible marker identifies the
+          # pipeline's comment, which is updated in place on re-runs (or created on the first).
+          marker='<!-- chart-pipeline -->'
+          { echo "$marker"; echo; cat /tmp/summary.md; } > /tmp/comment.md
+          existing="$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)"
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
+              -F body=@/tmp/comment.md > /dev/null
+          else
+            gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+              -F body=@/tmp/comment.md > /dev/null
+          fi

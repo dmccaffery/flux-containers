@@ -1,0 +1,12 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+#
+# Discovery-only values: enable anything whose images must be mirrored, even
+# when a given cluster's runtime values (in flux-manifests) leave it off.
+# Runtime values do NOT live here.
+#
+# crds.enabled renders the full component set (controller, webhook, cainjector,
+# startupapicheck) so discovery is complete; the Gateway API feature gate the
+# runtime enables changes no images.
+crds:
+  enabled: true

@@ -1,0 +1,30 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+apiVersion: flux-containers/v1alpha1
+name: flux-operator
+chart:
+  repo: oci://ghcr.io/controlplaneio-fluxcd/charts
+  name: flux-operator
+  version: "0.55.0"
+  versionConstraint: ">=0.20.0 <1.0.0"
+  verifyUpstream:
+    provider: cosign-keyless
+    certificateIdentityRegexp: "^https://github.com/controlplaneio-fluxcd/"
+    certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+discovery:
+  namespace: flux-system
+  valuesFiles: [values/discovery.yaml]
+  kubeVersion: "1.34.0"
+images:
+  extra: []
+  exclude: []
+  verifyUpstream:
+    - match: "ghcr.io/controlplaneio-fluxcd/*"
+      provider: cosign-keyless
+      certificateIdentityRegexp: "^https://github.com/controlplaneio-fluxcd/"
+      certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+scan:
+  failOn: [CRITICAL, HIGH]
+  ignoreUnfixed: true
+publish:
+  chartRepo: charts/flux-operator

@@ -1,0 +1,37 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+apiVersion: flux-containers/v1alpha1
+name: cert-manager
+chart:
+  repo: oci://quay.io/jetstack/charts
+  name: cert-manager
+  version: "v1.21.0"
+  versionConstraint: ">=1.18.0 <2.0.0"
+  # cert-manager documents PGP signing for chart tgzs; the OCI chart artifact
+  # carries no cosign signature we can verify here — documented gap. Image
+  # provenance below is verified against the project's published cosign key.
+  verifyUpstream:
+    provider: none
+discovery:
+  namespace: cert-manager
+  valuesFiles: [values/discovery.yaml]
+  kubeVersion: "1.34.0"
+images:
+  extra:
+    # acmesolver is launched per-challenge by the controller (flag-configured),
+    # invisible to helm template.
+    - image: "quay.io/jetstack/cert-manager-acmesolver:{appVersion}"
+      reason: ACME HTTP-01/DNS-01 solver pod image, referenced via controller flag not a pod spec
+  exclude: []
+  verifyUpstream:
+    # cert-manager signs images with a project cosign key and sha512 payload
+    # digests (https://cert-manager.io/docs/installation/code-signing/).
+    - match: "quay.io/jetstack/*"
+      provider: cosign-key
+      key: "https://cert-manager.io/public-keys/cert-manager-pubkey-2021-09-20.pem"
+      signatureDigestAlgorithm: sha512
+scan:
+  failOn: [CRITICAL, HIGH]
+  ignoreUnfixed: true
+publish:
+  chartRepo: charts/cert-manager

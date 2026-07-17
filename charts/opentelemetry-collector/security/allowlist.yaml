@@ -1,0 +1,11 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Accepted findings for the opentelemetry-collector-contrib 0.156.0 image
+# (chart 0.165.0's appVersion — the newest published; no rebuild with a
+# patched Go exists). Re-review on next upstream release.
+vulnerabilities:
+  # Go stdlib: fixed in go1.26.5, the 0.156.0 image is built with go1.26.4.
+  - id: GO-2026-4970
+    statement: Fixed in Go 1.26.5; no collector release is built with a patched Go (0.156.0 is latest). Re-review on next upstream release.
+    expired_at: "2026-10-01"

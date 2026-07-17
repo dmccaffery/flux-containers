@@ -1,0 +1,56 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Pipeline-wide configuration. Chart-specific intent lives in each chart's
+# manifest.yaml; everything here applies to the whole store.
+#
+# The registry and gcp values come from the terraform-google-gke-flux
+# artifact-store module outputs (platform_registry, workload_identity_provider,
+# chart_publisher.email). The gcp block is documentation of the wiring: the
+# publish workflow reads the same values from the GCP_WIF_PROVIDER /
+# GCP_SERVICE_ACCOUNT repository variables.
+
+registry:
+  # artifact-store `platform_registry` output:
+  # <location>-docker.pkg.dev/<project>/<repository>
+  # TODO(bootstrap): replace with the real x-patchy-app project id once the
+  # artifact store is applied.
+  url: "us-central1-docker.pkg.dev/x-patchy-app/platform"
+  # path prefixes inside the single Artifact Registry repository — AR serves
+  # arbitrary slash paths, so no per-path repository creation exists anywhere
+  chartNamespace: "charts"
+  imageNamespace: "images"
+
+signing:
+  # Keyless: GitHub Actions OIDC -> Fulcio certificate -> public Rekor entry.
+  # These repos are public; a public transparency log is deliberate. No KMS.
+  keyless: true
+  tlogUpload: true
+  # The exact certificate identity the publish workflow's signatures carry —
+  # used for publish idempotency self-verification, and the value consumers
+  # (flux-manifests OCIRepositories, the Kyverno policy, the FluxInstance
+  # verify patch) pin as SIGNED_IDENTITY_CHARTS / SIGNED_IDENTITY_IMAGES.
+  certificateIdentity: "https://github.com/bitwise-media-group/flux-containers/.github/workflows/publish.yaml@refs/heads/main"
+  certificateOidcIssuer: "https://token.actions.githubusercontent.com"
+
+gcp:
+  # artifact-store `workload_identity_provider` output (repository variable
+  # GCP_WIF_PROVIDER) and `chart_publisher.email` (GCP_SERVICE_ACCOUNT).
+  # TODO(bootstrap): fill in after the artifact store is applied.
+  workloadIdentityProvider: "projects/000000000000/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"
+  serviceAccount: "platform-chart-publisher@x-patchy-app.iam.gserviceaccount.com"
+
+scan:
+  # grype gate for image vulnerabilities; kubescape severity rides the
+  # toolchain default (high), matching these
+  failOn: [CRITICAL, HIGH]
+  ignoreUnfixed: true
+  # allowlist entries must carry expired_at within this horizon — expiry
+  # forces re-review instead of silently accepted-forever CVEs
+  allowlistMaxDays: 90
+  configScan: warn
+
+# Rewrites applied when PULLING from an upstream registry (e.g. a mirror in
+# front of docker.io); target paths in images.lock.yaml keep the canonical
+# source path regardless.
+sourceRegistryRewrites: {}

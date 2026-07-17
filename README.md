@@ -52,8 +52,8 @@ embedded flux version), `kyverno`, `cert-manager`, `external-dns`, `opentelemetr
 - **ci.yaml** (reusable): repo-wide lint (manifests, allowlists, shellcheck, license headers, prose, actionlint).
 - **pr-validate.yaml**: the deep per-chart gate — regeneration byte-identity, provenance, scans, sticky PR comment.
 - **publish.yaml** (push to main touching `charts/**`): WIF auth as the chart-publisher service account
-  (`GCP_WIF_PROVIDER` / `GCP_SERVICE_ACCOUNT` repository variables, from the terraform artifact-store outputs) → mirror
-  images by digest → push chart → keyless-sign all.
+  (`GCP_WIF_PROVIDER` / `GCP_CHART_PUBLISHER_SA` repository variables, from the terraform artifact-store outputs) →
+  mirror images by digest → push chart → keyless-sign all.
 - **update-check.yaml** (daily): constraint-aware bump PRs.
 - **rescan.yaml** (weekly): fresh-DB rescan of the published sets.
 - Merging is `/merge` fast-forward (see the merge-notice comment on any PR).

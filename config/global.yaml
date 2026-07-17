@@ -8,14 +8,12 @@
 # artifact-store module outputs (platform_registry, workload_identity_provider,
 # chart_publisher.email). The gcp block is documentation of the wiring: the
 # publish workflow reads the same values from the GCP_WIF_PROVIDER /
-# GCP_SERVICE_ACCOUNT repository variables.
+# GCP_CHART_PUBLISHER_SA repository variables.
 
 registry:
   # artifact-store `platform_registry` output:
   # <location>-docker.pkg.dev/<project>/<repository>
-  # TODO(bootstrap): replace with the real x-patchy-app project id once the
-  # artifact store is applied.
-  url: "us-central1-docker.pkg.dev/x-patchy-app/platform"
+  url: "us-central1-docker.pkg.dev/o-foundation-7e43/platform"
   # path prefixes inside the single Artifact Registry repository — AR serves
   # arbitrary slash paths, so no per-path repository creation exists anywhere
   chartNamespace: "charts"
@@ -35,10 +33,9 @@ signing:
 
 gcp:
   # artifact-store `workload_identity_provider` output (repository variable
-  # GCP_WIF_PROVIDER) and `chart_publisher.email` (GCP_SERVICE_ACCOUNT).
-  # TODO(bootstrap): fill in after the artifact store is applied.
-  workloadIdentityProvider: "projects/000000000000/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"
-  serviceAccount: "platform-chart-publisher@x-patchy-app.iam.gserviceaccount.com"
+  # GCP_WIF_PROVIDER) and `chart_publisher.email` (GCP_CHART_PUBLISHER_SA).
+  workloadIdentityProvider: "projects/266367770242/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"
+  serviceAccount: "platform-chart-publisher@o-foundation-7e43.iam.gserviceaccount.com"
 
 scan:
   # grype gate for image vulnerabilities; kubescape severity rides the

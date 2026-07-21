@@ -1,0 +1,65 @@
+# Copyright 2026 BitWise Media Group Ltd
+# SPDX-License-Identifier: MIT
+
+# Posts the PR Validate summary as a sticky PR comment. Split out via workflow_run
+# because pr-validate.yaml runs on pull_request, where fork PRs get a read-only
+# GITHUB_TOKEN (and pull_request_target is unacceptable — that pipeline executes
+# PR code). This workflow runs from the default branch with base-repo permissions,
+# downloads the summary artifact, and comments. The artifact body is fork-controlled
+# and treated as opaque markdown; the target PR is resolved from the run's trusted
+# head_sha, never from artifact contents.
+name: PR Validate Comment
+
+on:
+  workflow_run:
+    workflows: [PR Validate]
+    types: [completed]
+
+permissions:
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      # No artifact means no charts changed in the validated PR — nothing to say.
+      - name: download summary
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pr-validate-summary
+          path: ${{ runner.temp }}/summary
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: sticky PR comment
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SUMMARY_DIR: ${{ runner.temp }}/summary
+        run: |
+          # workflow_run.pull_requests is empty for fork PRs, so resolve the PR from the
+          # commit instead. head_sha comes from the event payload, not the artifact.
+          pr="$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" \
+            --jq '[.[] | select(.state == "open" and .base.repo.full_name == "${{ github.repository }}")][0].number // empty')"
+          if [ -z "$pr" ]; then
+            echo "no open PR found for $HEAD_SHA; skipping comment"
+            exit 0
+          fi
+          # Sticky behaviour without an external action: an invisible marker identifies the
+          # pipeline's comment, which is updated in place on re-runs (or created on the first).
+          marker='<!-- chart-pipeline -->'
+          { echo "$marker"; echo; cat "$SUMMARY_DIR/summary.md"; } > /tmp/comment.md
+          existing="$(gh api "repos/${{ github.repository }}/issues/$pr/comments" \
+            --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)"
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
+              -F body=@/tmp/comment.md > /dev/null
+          else
+            gh api "repos/${{ github.repository }}/issues/$pr/comments" \
+              -F body=@/tmp/comment.md > /dev/null
+          fi

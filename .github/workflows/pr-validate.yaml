@@ -5,8 +5,10 @@
 # runs only the cheap repo-wide lint): regenerate all derived state and demand
 # a byte-identical tree (proves the committed vendor/ matches a fresh upstream
 # pull, rendered/ regenerates identically and the image lock reflects the
-# reviewed chart), then verify upstream provenance and scan images + config,
-# and post the results as a sticky PR comment for reviewers.
+# reviewed chart), then verify upstream provenance and scan images + config.
+# The summary is uploaded as an artifact; pr-validate-comment.yaml (workflow_run)
+# posts it as a sticky PR comment, because fork PRs get a read-only GITHUB_TOKEN
+# here and pull_request_target is off the table (this job executes PR code).
 name: PR Validate
 
 on:
@@ -23,7 +25,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: pr-validate-${{ github.ref }}
@@ -100,22 +101,11 @@ jobs:
           } > /tmp/summary.md
           cat /tmp/summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: sticky PR comment
+      # Fork PRs run with a read-only GITHUB_TOKEN, so the comment itself is posted by
+      # pr-validate-comment.yaml (workflow_run), which picks up this artifact.
+      - name: upload summary for comment workflow
         if: always() && steps.charts.outputs.changed != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          # Sticky behaviour without an external action: an invisible marker identifies the
-          # pipeline's comment, which is updated in place on re-runs (or created on the first).
-          marker='<!-- chart-pipeline -->'
-          { echo "$marker"; echo; cat /tmp/summary.md; } > /tmp/comment.md
-          existing="$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-            --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)"
-          if [ -n "$existing" ]; then
-            gh api --method PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
-              -F body=@/tmp/comment.md > /dev/null
-          else
-            gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              -F body=@/tmp/comment.md > /dev/null
-          fi
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-validate-summary
+          path: /tmp/summary.md

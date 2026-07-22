@@ -48,7 +48,7 @@ fi
 
 if ! cosign verify --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" "$registry/$chart_repo@$digest" >/dev/null; then
   log "signing $registry/$chart_repo@$digest"
-  # legacy .sig-tag path (see publish-images.sh); public Rekor entry by design
+  # sigstore bundle via OCI referrers (see publish-images.sh); public Rekor entry by design
   cosign sign --tlog-upload=true --use-signing-config=false --yes "$registry/$chart_repo@$digest"
 fi
 

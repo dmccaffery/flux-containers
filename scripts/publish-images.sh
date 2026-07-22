@@ -34,10 +34,11 @@ while IFS=$'\t' read -r source digest target; do
   [[ "$(crane digest "$target")" == "$digest" ]] || die "digest changed while copying $source"
 
   log "signing $target_digest_ref"
-  # --use-signing-config=false keeps cosign v3 on the legacy .sig-tag path — the format
-  # Flux source-controller and Kyverno verification consume. The tlog entry is public
-  # Rekor (cosign's default), deliberately: these are public repos, and keyless
-  # verification wants the log.
+  # cosign v3 stores the signature as a sigstore bundle via the OCI referrers
+  # API — the format flux >= 2.8 and kyverno's SigstoreBundle rules consume.
+  # --use-signing-config=false only pins the v2 trust services (Fulcio + public
+  # Rekor v1), deliberately: these are public repos, and keyless verification
+  # wants the log. It does not change the storage format.
   cosign sign --use-signing-config=false --recursive --yes "$target_digest_ref"
 done < <(yq '.images[] | [.source, .digest, .target] | @tsv' "$lock")
 

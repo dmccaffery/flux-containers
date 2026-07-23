@@ -41,31 +41,76 @@ jobs:
           git config user.name "chart-update-bot"
           git config user.email "chart-update-bot@users.noreply.github.com"
 
-          charts="$INPUT_CHART"
-          [ -n "$charts" ] || charts="$(ls charts)"
+          all_charts="$(ls charts)"
+          requested="$INPUT_CHART"
+          [ -n "$requested" ] || requested="$all_charts"
 
-          for chart in $charts; do
-            current="$(yq '.chart.version' "charts/$chart/manifest.yaml")"
-            new="$(scripts/check-updates.sh "$chart" | tail -1)"
-            [ -n "$new" ] && [ "$new" != "$current" ] || continue
+          # Charts declaring .chart.lockstep share an upstream version stream
+          # and MUST move in one PR: a half-merged pair publishes an operator
+          # whose embedded flux release references controller images the
+          # mirror doesn't carry yet (or vice versa), stalling every cluster
+          # that picks it up. Standalone charts are their own group.
+          group_for() {
+            local g
+            g="$(yq '.chart.lockstep // ""' "charts/$1/manifest.yaml")"
+            [ -n "$g" ] && echo "$g" || echo "$1"
+          }
 
-            branch="update/$chart-$new"
+          groups=""
+          for chart in $requested; do
+            groups="$groups $(group_for "$chart")"
+          done
+          groups="$(echo "$groups" | tr ' ' '\n' | sort -u | grep .)"
+
+          for group in $groups; do
+            members=""
+            for chart in $all_charts; do
+              [ "$(group_for "$chart")" = "$group" ] && members="$members $chart"
+            done
+
+            # The group target is the LOWEST of the members' newest
+            # satisfying versions: upstream publishes lockstep charts
+            # near-simultaneously, and holding the bump until every member
+            # carries the tag is what prevents the half-mirrored release.
+            target=""
+            for chart in $members; do
+              current="$(yq '.chart.version' "charts/$chart/manifest.yaml")"
+              new="$(scripts/check-updates.sh "$chart" | tail -1)"
+              [ -n "$new" ] || new="$current"
+              if [ -z "$target" ] || [ "$(printf '%s\n%s\n' "$new" "$target" | sort -V | head -1)" = "$new" ]; then
+                target="$new"
+              fi
+            done
+
+            bumped=""
+            for chart in $members; do
+              [ "$(yq '.chart.version' "charts/$chart/manifest.yaml")" != "$target" ] && bumped="$bumped $chart"
+            done
+            [ -n "$bumped" ] || continue
+
+            branch="update/$group-$target"
             if gh pr list --head "$branch" --state open --json number --jq length | grep -qv '^0$'; then
               echo "PR for $branch already open; skipping"
               continue
             fi
 
             git switch -C "$branch" origin/main
-            NEW="$new" yq -i '.chart.version = env(NEW)' "charts/$chart/manifest.yaml"
-            make refresh CHART="$chart"
-            git add "charts/$chart"
-            git commit -m "feat($chart): update chart to $new"
+            summary=""
+            for chart in $bumped; do
+              current="$(yq '.chart.version' "charts/$chart/manifest.yaml")"
+              NEW="$target" yq -i '.chart.version = env(NEW)' "charts/$chart/manifest.yaml"
+              make refresh CHART="$chart"
+              git add "charts/$chart"
+              # shellcheck disable=SC2016 # the backticked markdown in the printf format is literal
+              summary="$(printf '%s`%s` **%s → %s**\n' "$summary" "$chart" "$current" "$target")"
+            done
+            git commit -m "feat($group): update chart to $target"
             git push -f origin "$branch"
 
             # shellcheck disable=SC2016 # the backticked markdown in the printf format is literal
             gh pr create \
               --head "$branch" \
-              --title "feat($chart): update chart to $new" \
-              --body "$(printf 'Automated chart bump: `%s` **%s → %s**.\n\nThe diff of `vendor/` and `rendered/` below is the reviewable change; `images.lock.yaml` carries the resolved image set. pr-validate posts provenance and scan results as a sticky comment.\n' "$chart" "$current" "$new")"
+              --title "feat($group): update chart to $target" \
+              --body "$(printf 'Automated chart bump:\n\n%s\nThe diff of `vendor/` and `rendered/` below is the reviewable change; `images.lock.yaml` carries the resolved image set. pr-validate posts provenance and scan results as a sticky comment.\n' "$summary")"
             git switch main
           done
